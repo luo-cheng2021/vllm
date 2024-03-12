@@ -16,6 +16,7 @@ from vllm.model_executor.parallel_utils.communication_op import (
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
 from vllm.utils import in_wsl
+import openvino as ov
 
 logger = init_logger(__name__)
 
@@ -61,6 +62,10 @@ def ov_wrapper(self, *args, **kwargs):
     #print(dir(input_metadata))
     #print(input_metadata.is_prompt, input_metadata.slot_mapping, input_metadata.max_context_len, input_metadata.context_lens, input_metadata.block_tables)
     def prepare_data(t):
+        if t.dtype == torch.bfloat16:
+            t_f16 = np.array(t.view(torch.float16), copy=False)
+            t = ov.Tensor(t_f16, ov.Shape(list(t_f16.shape)), ov.Type.bf16)
+            return t
         t = np.array(t, copy=False)
         #print(t.__array_interface__['data'][0])
         assert t.flags["C_CONTIGUOUS"]
@@ -186,7 +191,7 @@ def patch_model_with_openvino(model, model_config, *model_args, **model_kwargs):
     #TODO: Take real max_seq_len from somewhere
     input_meta = {"is_prompt": torch.tensor(False), "slot_mapping": slot_mapping, "max_seq_len": torch.tensor(256), "max_context_len": torch.tensor(2048), "context_lens": context_lens, "block_tables": block_tables}
 
-    fp_type = torch.float32
+    fp_type = model_config.kv_cache_dtype
     num_heads = pt_model.config.num_attention_heads
     head_size = pt_model.config.hidden_size
     head_dim = head_size // num_heads
@@ -196,7 +201,7 @@ def patch_model_with_openvino(model, model_config, *model_args, **model_kwargs):
     #TODO: Take example tensors from model_args/model_kwargs
     kv_cache = [(torch.ones((3640, 12, 16, 16, 4), dtype=fp_type), torch.ones((3640, 12, 64, 16), dtype=fp_type))] * model_config.hf_config.num_hidden_layers
 
-    example_input = (torch.ones((1, 1), dtype=torch.long), torch.range(0, 10, dtype=torch.long).unsqueeze(0)[:, -1:], tuple(kv_cache), input_meta)
+    example_input = (torch.ones((1, 1), dtype=torch.long), torch.arange(0, 10, dtype=torch.long).unsqueeze(0)[:, -1:], tuple(kv_cache), input_meta)
     class ModelWrapper(torch.nn.Module):
         def __init__(self, model):
             super().__init__()

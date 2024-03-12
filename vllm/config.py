@@ -66,6 +66,7 @@ class ModelConfig:
         download_dir: Optional[str],
         load_format: str,
         dtype: Union[str, torch.dtype],
+        kv_cache_dtype: Union[str, torch.dtype],
         seed: int,
         revision: Optional[str] = None,
         tokenizer_revision: Optional[str] = None,
@@ -105,6 +106,7 @@ class ModelConfig:
 
         self.hf_config = get_config(self.model, trust_remote_code, revision)
         self.dtype = _get_and_verify_dtype(self.hf_config, dtype, self.device)
+        self.kv_cache_dtype = self.dtype if kv_cache_dtype == 'auto' else _get_and_verify_dtype(self.hf_config, kv_cache_dtype, self.device)
         self.max_model_len = _get_and_verify_max_len(self.hf_config,
                                                      max_model_len)
         self._verify_load_format()

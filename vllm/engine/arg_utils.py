@@ -17,6 +17,7 @@ class EngineArgs:
     download_dir: Optional[str] = None
     load_format: str = 'auto'
     dtype: str = 'auto'
+    kv_cache_dtype: str = 'auto'
     seed: int = 0
     max_model_len: Optional[int] = None
     worker_use_ray: bool = False
@@ -225,7 +226,7 @@ class EngineArgs:
         model_config = ModelConfig(self.model, self.tokenizer,
                                    self.tokenizer_mode, self.trust_remote_code,
                                    self.download_dir, self.load_format,
-                                   self.dtype, self.seed, self.revision,
+                                   self.dtype, self.kv_cache_dtype, self.seed, self.revision,
                                    self.tokenizer_revision, self.max_model_len,
                                    self.quantization, self.enforce_eager,
                                    self.max_context_len_to_capture, self.device)
