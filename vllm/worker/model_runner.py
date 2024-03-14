@@ -94,6 +94,14 @@ def ov_wrapper(self, *args, **kwargs):
     #print(f'result: {type(result)}')
     return torch.from_numpy(result[0])
 
+ov_dtype_maping = {
+    torch.bool: ov.Type.boolean,
+    torch.float32: ov.Type.f32,
+    torch.float16: ov.Type.f16,
+    torch.bfloat16: ov.Type.bf16,
+    torch.int32: ov.Type.i32,
+    torch.int64: ov.Type.i64
+}
 
 def patch_model_with_openvino(model, model_config, *model_args, **model_kwargs):
     if hasattr(model, '_openvino_patch_orig_forward'):
@@ -214,15 +222,6 @@ def patch_model_with_openvino(model, model_config, *model_args, **model_kwargs):
 
     model_wrapper = ModelWrapper(pt_model)
 
-    ov_dtype_maping = {
-        torch.bool: ov.Type.boolean,
-        torch.float32: ov.Type.f32,
-        torch.float16: ov.Type.f16,
-        torch.bfloat16: ov.Type.bf16,
-        torch.int32: ov.Type.i32,
-        torch.int64: ov.Type.i64
-    }
-
     # avoid usage of vllm._C.ops
     from vllm.model_executor.layers.activation import SiluAndMul, NewGELU, FastGELU
     from vllm.model_executor.layers.layernorm import RMSNorm
@@ -302,7 +301,7 @@ def patch_model_with_openvino(model, model_config, *model_args, **model_kwargs):
     model._openvino_patch_orig_forward = model.forward
     model.forward = partial(ov_wrapper, model)
 
-def patch_stateful_model(model, factory):
+def patch_stateful_model(model, model_config, factory):
     print('TRANSFORMING OPTIMUM-INTEL MODEL TO vLLM COMPATIBLE FORM')
     from openvino.runtime.passes import Manager, MatcherPass, WrapType, Matcher, AnyInput, Or
     from openvino.runtime import opset13
@@ -374,8 +373,9 @@ def patch_stateful_model(model, factory):
                 real_v = mapping[v_current]
                 hidden_shape = real_q.get_partial_shape()
                 hidden_dim = hidden_shape[hidden_shape.rank.get_length() - 1].get_length()  # TODO: What if it is a dynamic? Need to insert a ShapeOf sub-graph instead
-                k_parameter = opset13.parameter(shape=[-1, -1, -1, -1, -1], dtype=np.float32)
-                v_parameter = opset13.parameter(shape=[-1, -1, -1, -1], dtype=np.float32)
+                cache_type = ov_dtype_maping[model_config.kv_cache_dtype]
+                k_parameter = opset13.parameter(shape=[-1, -1, -1, -1, -1], dtype=cache_type)
+                v_parameter = opset13.parameter(shape=[-1, -1, -1, -1], dtype=cache_type)
                 kv_parameters.append(k_parameter)
                 kv_parameters.append(v_parameter)
                 # TODO: The rank 4 is used in the following code, but it is not guaranteed for all models, adopt to other ranks.
@@ -559,7 +559,7 @@ class ModelRunner:
                 # Keep factory to destroy it in a particular moment when all other objects referencing custom nodes are destoyed
                 self.model.ov_node_factory = NodeFactory()
                 self.model.ov_node_factory.add_extension('libuser_ov_extensions.so')
-            patch_stateful_model(self.model.model, self.model.ov_node_factory)
+            patch_stateful_model(self.model.model, self.model_config, self.model.ov_node_factory)
             #ov.serialize(self.model.model, 'vllm_openvino_model.xml')
             core = ov.Core()
             ov_compiled = core.compile_model(self.model.model, "CPU")

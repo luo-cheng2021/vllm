@@ -12,20 +12,24 @@ def log(func):
         return ret
     return wrapper
 
-def run(prompts, model_path, run_ref, test_beam=False):
+def run(prompts, model_path, run_ref, test_beam=False, test_hf_model=False):
     if test_beam:
         sampling_params = SamplingParams(max_tokens=32, ignore_eos=True, use_beam_search=True, n=4, temperature=0.0)
     else:
         sampling_params = SamplingParams(max_tokens=32, ignore_eos=True)
 
-    os.environ['VLLM_OPENVINO'] = '1'
+    if test_hf_model:
+        os.environ['VLLM_OPENVINO'] = '0'
+        os.environ['VLLM_OPENVINO_OPTIMUM'] = '1'
+    else:
+        os.environ['VLLM_OPENVINO'] = '1'
+        os.environ['VLLM_OPENVINO_OPTIMUM'] = '0'
+    print(f'========running {"ref" if run_ref else "target"} {"with" if test_beam else "without"} beam search using {"hf" if test_hf_model else "vllm"} model...')
     if run_ref:
-        print(f'running ref {model_path} beam {test_beam}...')
         block_size = 16
         kv_cache_dtype = 'auto'
         os.environ['ENABLE_PG'] = '0'
     else:
-        print(f'running cur {model_path} beam {test_beam}...')
         block_size = 1
         # TODO: SPR will use bf16, others are f16
         kv_cache_dtype = torch.bfloat16
@@ -58,15 +62,25 @@ def run(prompts, model_path, run_ref, test_beam=False):
         result.append(generated_text)
     return result
 
-def run_one_pair(prompt, model, test_beam=False):
-    ref = run(prompt, model, True, test_beam)
-    cur = run(prompt, model, False, test_beam)
+def run_one_pair(prompt, model, test_beam=False, test_hf_model=False):
+    ref = run(prompt, model, True, test_beam=test_beam, test_hf_model=test_hf_model)
+    cur = run(prompt, model, False, test_beam=test_beam, test_hf_model=test_hf_model)
     assert ref == cur, f'ref = \n{ref}\ncur = \n{cur}\n'
 
 @log
 def test_basic():
     run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
-                 '/home/llm_irs/pytorch_frontend_models/llama-2-7b-chat/pytorch_original/')
+                 'meta-llama/Llama-2-7b-chat-hf')
+
+@log
+def test_hf_model():
+    run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
+                 'meta-llama/Llama-2-7b-chat-hf', test_hf_model=test_hf_model)
+
+@log
+def test_hf_model_beam_search():
+    run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
+                 'meta-llama/Llama-2-7b-chat-hf', test_beam=True, test_hf_model=test_hf_model)
 
 @log
 def test_batching():
@@ -74,17 +88,17 @@ def test_batching():
                   'The president of the United States is',
                   'The capital of France is',
                   'The future of AI is',],
-                 '/home/llm_irs/pytorch_frontend_models/llama-2-7b-chat/pytorch_original/')
+                 'meta-llama/Llama-2-7b-chat-hf')
 
 @log
 def test_beam_search():
     run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
-                 '/home/llm_irs/pytorch_frontend_models/llama-2-7b-chat/pytorch_original/', True)
+                 'meta-llama/Llama-2-7b-chat-hf', test_beam=True)
 
 @log
 def test_multi_query():
     run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
-                 '/mnt/chatglm2-6b/', True)
+                 'THUDM/chatglm2-6b', test_beam=True)
 
 @log
 def test_first_token_less_than_sliding_window():
@@ -121,8 +135,8 @@ def test_first_token_less_than_sliding_window():
         Job Displacement: Automation powered by LLMs could potentially replace certain jobs. However, LLMs are more likely to augment existing roles, freeing up humans to focus on more complex tasks.
         The Future Beckons: A World Shaped by LLMs
         '''
-    # prompt len = 4070, sliding_window = 4096, output = 64
-    run_one_pair(long_prompt * 4, '/mnt/disk1/luocheng/model/Mistral-7B-v0.1')
+    # prompt len = 4070, sliding_window = 4096, output = 32
+    run_one_pair(long_prompt * 4, 'mistralai/Mistral-7B-v0.1')
 
 @log
 def test_first_token_great_than_sliding_window():
@@ -163,14 +177,17 @@ def test_first_token_great_than_sliding_window():
         The Future Beckons: A World Shaped by LLMs
         The future holds immense promise for LLMs. As research progresses, we can expect even more sophisticated models capable of complex reasoning, emotional intelligence, and nuanced understanding of the human experience. LLMs have the potential to
         '''
-    # prompt len = 4582, sliding_window = 4096, output = 64
-    run_one_pair(long_prompt * 4, '/mnt/disk1/luocheng/model/Mistral-7B-v0.1')
-
+    # prompt len = 4582, sliding_window = 4096, output = 32
+    run_one_pair(long_prompt * 4, 'mistralai/Mistral-7B-v0.1')
 
 
 test_basic()
+test_hf_model()
+test_hf_model_beam_search()
 test_batching()
 test_beam_search()
 test_multi_query()
 test_first_token_less_than_sliding_window()
 test_first_token_great_than_sliding_window()
+
+print('success.')
