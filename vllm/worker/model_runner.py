@@ -308,7 +308,7 @@ def patch_stateful_model(model, model_config, factory):
     from openvino.runtime.utils import replace_node
 
     #model.remove_parameter(model.input('beam_idx').get_node())
-    max_context_len = opset13.parameter(shape=[], dtype=np.int64, name='max_context_len')  # max_context_len
+    max_context_len = opset13.parameter(shape=[], dtype=np.int32, name='max_context_len')  # max_context_len
     model_remaining_params = [
         opset13.parameter(shape=[], dtype=bool, name='is_prompt'),  # is_prompt
         opset13.parameter(shape=[-1, -1], dtype=np.int64, name='slot_mapping'),  # slot mapping

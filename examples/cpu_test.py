@@ -68,6 +68,11 @@ def run_one_pair(prompt, model, test_beam=False, test_hf_model=False):
     assert ref == cur, f'ref = \n{ref}\ncur = \n{cur}\n'
 
 @log
+def test_mixtral():
+    run_one_pair('[INST]What is OpenVINO?[/INST]',
+                 'fxmeng/Mixtral-2x7B-Instruct-v0.1')
+
+@log
 def test_basic():
     run_one_pair('OpenVINO is an open-source toolkit for machine learning inference, developed by Intel. It allows developers to optimize and run deep learning models',
                  'meta-llama/Llama-2-7b-chat-hf')
@@ -182,6 +187,7 @@ def test_first_token_great_than_sliding_window():
 
 
 test_basic()
+#test_mixtral()
 test_hf_model()
 test_hf_model_beam_search()
 test_batching()
