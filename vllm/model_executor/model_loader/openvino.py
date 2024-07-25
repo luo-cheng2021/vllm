@@ -147,7 +147,10 @@ class OpenVINOCasualLM(nn.Module):
                                  device_config.device.type == "cpu")
 
         core = ov.Core()
-        ov_compiled = core.compile_model(pt_model.model, "CPU")
+        config = {
+            "CPU_DENORMALS_OPTIMIZATION": "YES"
+        }
+        ov_compiled = core.compile_model(pt_model.model, "CPU", config)
         self.ov_request = ov_compiled.create_infer_request()
 
     def forward(
@@ -170,8 +173,7 @@ class OpenVINOCasualLM(nn.Module):
             attn_metadata.max_context_len,
         ]
 
-        self.ov_request.start_async(inputs, share_inputs=True)
-        self.ov_request.wait()
+        self.ov_request.infer(inputs, share_inputs=True)
 
         logits = torch.from_numpy(self.ov_request.get_tensor("logits").data)
 
@@ -180,7 +182,8 @@ class OpenVINOCasualLM(nn.Module):
 
     def compute_logits(self, hidden_states: torch.Tensor,
                        sampling_metadata: SamplingMetadata) -> torch.Tensor:
-        hidden_states = _prune_hidden_states(hidden_states, sampling_metadata)
+        if hidden_states.shape[0] != sampling_metadata.selected_token_indices.shape[0]:
+            hidden_states = _prune_hidden_states(hidden_states, sampling_metadata)
         logits = self.logits_processor(None, hidden_states, sampling_metadata)
         return logits
 
